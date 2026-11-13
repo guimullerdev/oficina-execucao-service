@@ -3,6 +3,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
+import { MessageHandlerRegistry } from './handlers/message-handler.registry';
 import { IdempotentProcessor } from './idempotency/idempotent-processor';
 import { MessagingModule } from './messaging.module';
 import { OutboxPublisher } from './outbox.publisher';
@@ -41,6 +42,9 @@ describe('MessagingModule', () => {
     );
     expect(moduleRef.get(OutboxWriter)).toBeInstanceOf(OutboxWriter);
     expect(moduleRef.get(OutboxPublisher)).toBeInstanceOf(OutboxPublisher);
+    expect(moduleRef.get(MessageHandlerRegistry)).toBeInstanceOf(
+      MessageHandlerRegistry,
+    );
     expect(moduleRef.get(SNSClient)).toBeInstanceOf(SNSClient);
     expect(moduleRef.get(SQSClient)).toBeInstanceOf(SQSClient);
 

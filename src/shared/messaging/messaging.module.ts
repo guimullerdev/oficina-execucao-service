@@ -4,9 +4,11 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DynamodbModule } from '../dynamodb/dynamodb.module';
+import { MessageHandlerRegistry } from './handlers/message-handler.registry';
 import { IdempotentProcessor } from './idempotency/idempotent-processor';
 import { OutboxPublisher } from './outbox.publisher';
 import { OutboxWriter } from './outbox.writer';
+import { SqsConsumerService } from './sqs/sqs-consumer.service';
 
 const awsClientConfig = (config: ConfigService) => {
   const endpoint = config.get<string>('AWS_ENDPOINT_URL');
@@ -34,10 +36,12 @@ const awsClientConfig = (config: ConfigService) => {
     OutboxWriter,
     IdempotentProcessor,
     OutboxPublisher,
-    // Added by the consumer task (exactly these two, nothing else):
-    // { provide: MessageHandlerRegistry, useFactory: () => new MessageHandlerRegistry() },
-    // SqsConsumerService,
+    {
+      provide: MessageHandlerRegistry,
+      useFactory: () => new MessageHandlerRegistry(),
+    },
+    SqsConsumerService,
   ],
-  exports: [OutboxWriter, IdempotentProcessor /* , MessageHandlerRegistry */],
+  exports: [OutboxWriter, IdempotentProcessor, MessageHandlerRegistry],
 })
 export class MessagingModule {}
