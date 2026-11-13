@@ -9,6 +9,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/guimullerdev/oficina-execucao-service
+  AWS_REGION: us-east-1
+  # Precisa bater com var.cluster_name do repo de infra do cluster; este repo so consome.
+  CLUSTER_NAME: oficina-cluster
 
 jobs:
   build-and-test:
@@ -44,6 +47,26 @@ jobs:
             -Dsonar.qualitygate.wait=true
             -Dsonar.qualitygate.timeout=300
 
+  # Checagens estaticas de Terraform: sem backend S3, sem credenciais AWS.
+  terraform-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.9.x
+          terraform_wrapper: false
+
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate -no-color
+
   docker-build-push:
     needs: build-and-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -67,3 +90,93 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:latest
+
+  # Deploy no EKS. Pula (sem falhar) quando faltam credenciais de deploy.
+  deploy:
+    needs: docker-build-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Secret de environment tem precedencia sobre o do repositorio.
+    environment: prod
+    env:
+      APP_IMAGE: ghcr.io/guimullerdev/oficina-execucao-service:${{ github.sha }}
+      NAMESPACE: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      # `if` de step nao le `secrets`; o gate expoe um unico output booleano.
+      - id: gate
+        env:
+          HAS_AWS: ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'true' || 'false' }}
+        run: |
+          run=true
+          if [ "$HAS_AWS" != "true" ]; then
+            echo "::warning::AWS_ACCESS_KEY_ID nao configurado; deploy pulado."
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # So usado em conta AWS Academy Learner Lab (credencial temporaria).
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configurar kubeconfig
+        if: steps.gate.outputs.run == 'true'
+        run: aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      # O Secret e criado a partir dos secrets do GitHub, nunca de arquivo versionado.
+      - name: Publicar Secret da aplicacao
+        if: steps.gate.outputs.run == 'true'
+        env:
+          SNS_TOPIC_ARN: ${{ secrets.SNS_TOPIC_ARN }}
+          SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+          # Mesmo valor do OS: o guard valida os tokens emitidos por ele.
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          # Chave do usuario IAM do pod (so mensageria e DynamoDB). NAO sao as
+          # chaves de deploy do repositorio, que tem AdministratorAccess.
+          POD_AWS_ACCESS_KEY_ID: ${{ secrets.POD_AWS_ACCESS_KEY_ID }}
+          POD_AWS_SECRET_ACCESS_KEY: ${{ secrets.POD_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          # Sem a chave, o pod cairia na cadeia padrao do SDK e o acesso a
+          # DynamoDB/SNS/SQS falharia com AccessDenied: melhor avisar alto.
+          POD_AWS_ARGS=()
+          if [ -n "$POD_AWS_ACCESS_KEY_ID" ] && [ -n "$POD_AWS_SECRET_ACCESS_KEY" ]; then
+            POD_AWS_ARGS+=(--from-literal=AWS_ACCESS_KEY_ID="$POD_AWS_ACCESS_KEY_ID")
+            POD_AWS_ARGS+=(--from-literal=AWS_SECRET_ACCESS_KEY="$POD_AWS_SECRET_ACCESS_KEY")
+          else
+            echo "::warning::POD_AWS_ACCESS_KEY_ID/POD_AWS_SECRET_ACCESS_KEY ausentes: o pod nao tera credencial AWS."
+          fi
+          # Sem JWT_SECRET o app aborta no boot (fail fast do JwtAuthGuard).
+          if [ -z "$JWT_SECRET" ]; then
+            echo "::error::JWT_SECRET ausente no environment prod: o pod nao sobe sem ele."
+            exit 1
+          fi
+          kubectl create secret generic oficina-execucao-service-secret \
+            --namespace "$NAMESPACE" \
+            --from-literal=SNS_TOPIC_ARN="$SNS_TOPIC_ARN" \
+            --from-literal=SQS_QUEUE_URL="$SQS_QUEUE_URL" \
+            --from-literal=JWT_SECRET="$JWT_SECRET" \
+            "${POD_AWS_ARGS[@]}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Aplicar ConfigMap
+        if: steps.gate.outputs.run == 'true'
+        run: kubectl apply -n "$NAMESPACE" -f k8s/configmap.yaml
+
+      - name: Aplicar Deployment, Service, Ingress e HPA
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          # shellcheck disable=SC2016
+          envsubst '${APP_IMAGE}' < k8s/deployment.yaml | kubectl apply -n "$NAMESPACE" -f -
+          kubectl apply -n "$NAMESPACE" -f k8s/service.yaml
+          kubectl apply -n "$NAMESPACE" -f k8s/ingress.yaml
+          kubectl apply -n "$NAMESPACE" -f k8s/hpa.yaml
+
+      - name: Aguardar rollout
+        if: steps.gate.outputs.run == 'true'
+        run: kubectl rollout status -n "$NAMESPACE" deployment/oficina-execucao-service --timeout=300s
