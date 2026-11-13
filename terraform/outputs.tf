@@ -37,15 +37,3 @@ output "service_user_name" {
   description = "Usuário IAM do pod do execucao-service"
   value       = aws_iam_user.service.name
 }
-
-output "iam_access_key_id" {
-  description = "Access key id do usuário IAM do pod"
-  value       = aws_iam_access_key.service.id
-  sensitive   = true
-}
-
-output "iam_secret_access_key" {
-  description = "Secret access key do usuário IAM do pod"
-  value       = aws_iam_access_key.service.secret
-  sensitive   = true
-}

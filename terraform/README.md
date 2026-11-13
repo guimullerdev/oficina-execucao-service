@@ -4,13 +4,14 @@ Cria a fila `oficina-execucao-queue` e a DLQ `oficina-execucao-queue-dlq` (redri
 a queue policy (somente `oficina-os-events` envia), a subscription raw delivery em `oficina-os-events`
 com filtro `evento` = `os.execucao.solicitada`, a tabela DynamoDB `oficina-execucao` (PAY_PER_REQUEST,
 PK/SK, GSIs `fila` e `outbox`, iguais a `scripts/localstack/init.sh`), a policy IAM e o usuário IAM
-`oficina-execucao-service` com access key.
+`oficina-execucao-service` (sem access key: ela é criada fora do Terraform, como no billing).
 
 Os tópicos SNS `oficina-os-events` e `oficina-execucao-events` pertencem ao root `mensageria/` do
 `oficina-infra-k8s`; aqui só são referenciados por ARN (nenhum tópico é criado).
 
-Sem point-in-time recovery na tabela (custo mínimo; ambiente acadêmico). A access key fica no state
-(criptografado no bucket S3) e é exposta como output sensível.
+Sem point-in-time recovery na tabela (custo mínimo; ambiente acadêmico).
+A access key do pod não é gerenciada aqui (não vai para o state): ver o runbook do `oficina-infra-k8s`
+(`aws iam create-access-key --user-name $(terraform output -raw service_user_name)`).
 
 ## Variáveis obrigatórias
 
@@ -44,12 +45,7 @@ Opcionais (com default): `aws_region` (`us-east-1`), `queue_name`, `dlq_name`, `
 ## Outputs
 
 `queue_url`, `queue_arn`, `dlq_url`, `dlq_arn`, `table_name`, `table_arn`, `os_events_subscription_arn`,
-`service_user_name`, `iam_access_key_id` (sensível), `iam_secret_access_key` (sensível).
-
-```bash
-terraform output -raw iam_access_key_id
-terraform output -raw iam_secret_access_key
-```
+`service_user_name`.
 
 ## Ciclo de vida: DynamoDB x teardown do EKS
 

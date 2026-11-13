@@ -171,8 +171,3 @@ resource "aws_iam_user_policy_attachment" "service" {
   user       = aws_iam_user.service.name
   policy_arn = aws_iam_policy.service.arn
 }
-
-# ATENÇÃO: a chave (e o secret) ficam no state, que é criptografado no bucket S3.
-resource "aws_iam_access_key" "service" {
-  user = aws_iam_user.service.name
-}
