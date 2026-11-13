@@ -3,6 +3,7 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { MessageHandlerRegistry } from '../../shared/messaging/handlers/message-handler.registry';
 import { MessagingModule } from '../../shared/messaging/messaging.module';
 import { AuthModule } from '../auth/auth.module';
+import { AutoConcluirService } from './application/auto-concluir.service';
 import { ConsultarExecucaoUseCase } from './application/consultar.use-case';
 import { FalharUseCase } from './application/falhar.use-case';
 import { FinalizarUseCase } from './application/finalizar.use-case';
@@ -21,6 +22,7 @@ import { ExecucaoSolicitadaHandler } from './messaging/execucao-solicitada.handl
     IniciarUseCase,
     FinalizarUseCase,
     FalharUseCase,
+    AutoConcluirService,
   ],
 })
 export class ExecucaoModule implements OnModuleInit {
