@@ -1,0 +1,56 @@
+# Namespace is intentionally not declared: applied with `kubectl apply -n $NAMESPACE`.
+# `${APP_IMAGE}` is substituted by the pipeline via envsubst.
+# No migrations: DynamoDB single table, provisioned by terraform.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oficina-execucao-service
+  labels:
+    app: oficina-execucao-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oficina-execucao-service
+  template:
+    metadata:
+      labels:
+        app: oficina-execucao-service
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: oficina-execucao-service
+          image: ${APP_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: oficina-execucao-service-config
+            - secretRef:
+                name: oficina-execucao-service-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /execucao/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /execucao/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 20
