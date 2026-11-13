@@ -53,6 +53,24 @@ describe('DynamoTransaction', () => {
     expect(tx.size).toBe(2);
   });
 
+  it('exposes the indexes of puts marked idempotent', () => {
+    tx.put({ Item: { PK: 'A', SK: '1' } });
+    const marked = tx.put({ Item: { PK: 'A', SK: '2' } }, { idempotent: true });
+    tx.put({ Item: { PK: 'A', SK: '3' } }, { idempotent: false });
+
+    expect(marked).toBe(1);
+    expect([...tx.idempotentIndexes]).toEqual([1]);
+  });
+
+  it('does not send the idempotent marker to DynamoDB', async () => {
+    tx.put({ Item: { PK: 'A', SK: '1' } }, { idempotent: true });
+    await tx.commit();
+
+    expect(
+      ddbMock.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems,
+    ).toEqual([{ Put: { TableName: TABLE, Item: { PK: 'A', SK: '1' } } }]);
+  });
+
   it('commits one TransactWriteCommand in insertion order with TableName injected', async () => {
     tx.put({
       Item: { PK: 'A', SK: '1' },

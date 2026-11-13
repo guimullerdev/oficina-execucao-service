@@ -11,6 +11,7 @@ describe('AppModule', () => {
   beforeEach(() => {
     process.env.AWS_REGION = 'us-east-1';
     process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-secret';
   });
 
   afterEach(() => {

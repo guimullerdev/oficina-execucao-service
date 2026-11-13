@@ -7,8 +7,10 @@ import {
 } from '../../dynamodb/dynamodb.client';
 import { msgKey } from '../../dynamodb/keys';
 import {
+  CONDITIONAL_CHECK_FAILED,
   DynamoTransaction,
   TransactionWriter,
+  cancellationReasons,
   conditionFailedAt,
 } from '../../dynamodb/transaction';
 import {
@@ -27,7 +29,10 @@ export type ProcessResult = 'processed' | 'duplicate';
  * erro é relançado (a mensagem não deve ser removida da fila e será
  * reentregue). Uma entrega repetida é descartada sem chamar o handler (leitura
  * consistente) ou, em corrida entre réplicas, quando a transação é cancelada
- * com `ConditionalCheckFailed` no índice do MSG.
+ * com `ConditionalCheckFailed` no índice do MSG. Itens do handler marcados como
+ * idempotentes (`put(item, { idempotent: true })`) também indicam duplicata
+ * quando são a única causa do cancelamento (ex.: mesmo comando reenviado com
+ * outro eventId).
  */
 @Injectable()
 export class IdempotentProcessor {
@@ -80,7 +85,7 @@ export class IdempotentProcessor {
       await tx.commit();
       return 'processed';
     } catch (error) {
-      if (conditionFailedAt(error, msgIndex)) {
+      if (this.isDuplicateCancellation(error, msgIndex, tx)) {
         this.warnDuplicate(eventId, message.evento);
         return 'duplicate';
       }
@@ -96,6 +101,35 @@ export class IdempotentProcessor {
     const result = await work(tx);
     await tx.commit();
     return result;
+  }
+
+  private isDuplicateCancellation(
+    error: unknown,
+    msgIndex: number,
+    tx: DynamoTransaction,
+  ): boolean {
+    if (conditionFailedAt(error, msgIndex)) {
+      return true;
+    }
+    const reasons = cancellationReasons(error);
+    if (reasons === undefined) {
+      return false;
+    }
+    // Every failure must be a ConditionalCheckFailed at an idempotent item.
+    let idempotentFailure = false;
+    for (const [index, reason] of reasons.entries()) {
+      if (reason.Code === undefined || reason.Code === 'None') {
+        continue;
+      }
+      if (
+        reason.Code !== CONDITIONAL_CHECK_FAILED ||
+        !tx.idempotentIndexes.has(index)
+      ) {
+        return false;
+      }
+      idempotentFailure = true;
+    }
+    return idempotentFailure;
   }
 
   private warnDuplicate(eventId: string, evento: string): void {

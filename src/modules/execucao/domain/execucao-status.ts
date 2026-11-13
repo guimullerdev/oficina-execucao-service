@@ -1,0 +1,6 @@
+export enum ExecucaoStatus {
+  RECEBIDA = 'RECEBIDA',
+  EM_EXECUCAO = 'EM_EXECUCAO',
+  FINALIZADA = 'FINALIZADA',
+  FALHOU = 'FALHOU',
+}

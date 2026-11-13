@@ -213,6 +213,99 @@ describe('IdempotentProcessor', () => {
       expect(warn).not.toHaveBeenCalled();
     });
 
+    describe('idempotent handler items', () => {
+      const idempotentHandler = (): MessageHandler => ({
+        evento: 'os.execucao.solicitada',
+        handle: (_m, tx) => {
+          const writer = requireTransaction(tx, 'os.execucao.solicitada');
+          writer.put(
+            { Item: { PK: 'OS#os-1', SK: 'META' } },
+            { idempotent: true },
+          );
+          writer.put({ Item: { PK: 'OS#os-1', SK: 'EVT#1' } });
+          return Promise.resolve();
+        },
+      });
+
+      it('treats ConditionalCheckFailed at a marked item as a duplicate', async () => {
+        ddbMock
+          .on(TransactWriteCommand)
+          .rejects(canceled('ConditionalCheckFailed', 'None', 'None'));
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).resolves.toBe('duplicate');
+        expect(warn).toHaveBeenCalledWith(
+          'Mensagem duplicada ignorada (eventId=evt-1, evento=os.execucao.solicitada)',
+        );
+      });
+
+      it('rethrows ConditionalCheckFailed at an unmarked handler item', async () => {
+        const err = canceled('None', 'ConditionalCheckFailed', 'None');
+        ddbMock.on(TransactWriteCommand).rejects(err);
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).rejects.toBe(err);
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('rethrows mixed reasons (marked CCF plus another failure)', async () => {
+        const err = canceled(
+          'ConditionalCheckFailed',
+          'TransactionConflict',
+          'None',
+        );
+        ddbMock.on(TransactWriteCommand).rejects(err);
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).rejects.toBe(err);
+      });
+
+      it('rethrows marked CCF plus CCF at an unmarked item', async () => {
+        const err = canceled(
+          'ConditionalCheckFailed',
+          'ConditionalCheckFailed',
+          'None',
+        );
+        ddbMock.on(TransactWriteCommand).rejects(err);
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).rejects.toBe(err);
+      });
+
+      it('rethrows a non-conditional code at the marked item', async () => {
+        const err = canceled('ValidationError', 'None', 'None');
+        ddbMock.on(TransactWriteCommand).rejects(err);
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).rejects.toBe(err);
+      });
+
+      it('rethrows a cancellation with no reasons', async () => {
+        const err = canceled();
+        ddbMock.on(TransactWriteCommand).rejects(err);
+
+        await expect(
+          processor.process(message, idempotentHandler()),
+        ).rejects.toBe(err);
+      });
+    });
+
+    it('commits only the MSG item when the handler adds nothing (META exists)', async () => {
+      const noop: MessageHandler = {
+        evento: 'os.execucao.solicitada',
+        handle: jest.fn().mockResolvedValue(undefined),
+      };
+
+      await expect(processor.process(message, noop)).resolves.toBe('processed');
+      expect(transactItems()).toHaveLength(1);
+      expect(transactItems()[0].Put!.Item!.PK).toBe('MSG#evt-1');
+    });
+
     it('rethrows TransactionConflict at the MSG index', async () => {
       const err = canceled('None', 'TransactionConflict');
       ddbMock.on(TransactWriteCommand).rejects(err);

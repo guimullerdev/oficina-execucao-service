@@ -24,11 +24,20 @@ export type TransactUpdateParams = Omit<
   'TableName' | 'Key'
 > & { Key: Attributes };
 
+export interface TransactPutOptions {
+  /**
+   * The Put's condition guards against replays of the same logical command
+   * (e.g. a META created by an earlier event): a ConditionalCheckFailed at this
+   * index means "already applied" and the message is a duplicate.
+   */
+  idempotent?: boolean;
+}
+
 /** What handlers / use cases may touch. Handlers MUST NOT commit. */
 export interface TransactionWriter {
   readonly size: number;
   /** Adds a Put; returns its index in TransactItems. */
-  put(params: TransactPutParams): number;
+  put(params: TransactPutParams, options?: TransactPutOptions): number;
   /** Adds an Update; returns its index in TransactItems. */
   update(params: TransactUpdateParams): number;
 }
@@ -36,6 +45,7 @@ export interface TransactionWriter {
 export class DynamoTransaction implements TransactionWriter {
   private readonly items: TransactWriteItem[] = [];
   private readonly keys = new Set<string>();
+  private readonly idempotent = new Set<number>();
   private committed = false;
 
   constructor(
@@ -47,10 +57,19 @@ export class DynamoTransaction implements TransactionWriter {
     return this.items.length;
   }
 
-  put(params: TransactPutParams): number {
-    return this.add(params.Item, {
+  /** Indices of items marked idempotent (see TransactPutOptions). */
+  get idempotentIndexes(): ReadonlySet<number> {
+    return this.idempotent;
+  }
+
+  put(params: TransactPutParams, options?: TransactPutOptions): number {
+    const index = this.add(params.Item, {
       Put: { ...params, TableName: this.tableName },
     });
+    if (options?.idempotent) {
+      this.idempotent.add(index);
+    }
+    return index;
   }
 
   update(params: TransactUpdateParams): number {
