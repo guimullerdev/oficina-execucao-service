@@ -60,3 +60,12 @@ docs/plano-fase*.md
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+terraform/terraform.tfvars
+*.auto.tfvars
