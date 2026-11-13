@@ -1,0 +1,12 @@
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: oficina_execucao_localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: sns,sqs,dynamodb
+    ports:
+      # Same port as the other oficina services' localstack: run only one stack at a time.
+      - '4566:4566'
+    volumes:
+      - ./scripts/localstack/init.sh:/etc/localstack/init/ready.d/init.sh
