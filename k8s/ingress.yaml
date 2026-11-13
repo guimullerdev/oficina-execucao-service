@@ -1,0 +1,20 @@
+# Namespace decided by `kubectl apply -n $NAMESPACE`.
+# No host and no rewrite: only the execucao paths are routed to this service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oficina-execucao-service
+  labels:
+    app: oficina-execucao-service
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /execucao
+            pathType: Prefix
+            backend:
+              service:
+                name: oficina-execucao-service
+                port:
+                  number: 3000

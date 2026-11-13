@@ -1,0 +1,18 @@
+# Real AWS: no AWS_ENDPOINT_URL here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oficina-execucao-service-config
+  labels:
+    app: oficina-execucao-service
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  AWS_REGION: "us-east-1"
+  DYNAMODB_TABLE: "oficina-execucao"
+  SQS_CONSUMER_ENABLED: "true"
+  OUTBOX_PUBLISHER_ENABLED: "true"
+  OUTBOX_POLL_MS: "2000"
+  OUTBOX_BATCH: "25"
+  # Auto-conclusion poller; empty = disabled.
+  EXECUCAO_AUTO_CONCLUIR_MS: ""
