@@ -227,6 +227,8 @@ Pipeline `.github/workflows/ci-cd.yml` (push e PR em `main`; imagem e deploy só
 | `docker-build-push` | build e push para o GHCR: `ghcr.io/guimullerdev/oficina-execucao-service:<sha>` e `:latest` |
 | `deploy` | environment `prod`, namespace `prod`, cluster EKS `oficina-cluster`; pulado (com aviso) sem `AWS_ACCESS_KEY_ID` |
 
+`workflow_dispatch` (aba Actions, ou `gh workflow run ci-cd.yml --ref main`) roda só `build-and-test` e `terraform-check`: os jobs de imagem e deploy exigem `push` na `main`.
+
 O `deploy` cria o Secret `oficina-execucao-service-secret` (`SNS_TOPIC_ARN`, `SQS_QUEUE_URL`, `JWT_SECRET` e a chave do pod), aplica o ConfigMap, o Deployment, o Service, o Ingress e o HPA e espera o rollout. Não há Job de migration: a tabela vem do Terraform.
 
 **Terraform** (`terraform/`, apply manual; o CI só valida): cria a fila e a DLQ (3 recebimentos), a queue policy (só `oficina-os-events` envia), a assinatura raw com filtro de `evento`, a tabela DynamoDB `oficina-execucao` (GSIs `fila` e `outbox`), a policy IAM e o usuário IAM do serviço. A access key do pod é criada fora do Terraform. Os tópicos SNS pertencem ao `oficina-infra-k8s`. Passo a passo em `terraform/README.md`.
