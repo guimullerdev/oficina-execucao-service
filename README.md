@@ -23,6 +23,8 @@ Tech Challenge Fase 4 - microsserviço de execução e produção da oficina (Ne
 
 O Execução e Produção cuida da fila de trabalho da oficina: recebe o pedido de execução de uma OS, mantém o estado da execução (recebida, em execução, finalizada ou falhou) e avisa o OS do resultado. Ele não decide o andamento da saga: reage ao comando que chega por SNS/SQS e responde publicando eventos.
 
+**Por que saga orquestrada.** O fluxo da OS atravessa 3 serviços e precisa de compensação (orçamento reprovado, pagamento recusado, execução falha). Com o orquestrador no OS, a máquina de estados fica num só lugar (`saga-definicao.ts`), cada passo tem timeout e compensação declarados e `GET /os/:id/saga` mostra a instância inteira. Na coreografia o fluxo ficaria implícito, espalhado por reações em três repositórios e difícil de rastrear. O custo é o OS virar coordenador: se ele cair, as sagas param, mas nada se perde (outbox + SQS). O Execução segue o mesmo contrato: consome com idempotência por `eventId` e publica pelo outbox. Justificativa completa na [RFC 0006](https://github.com/guimullerdev/oficina-os-service/blob/main/docs/rfc/0006-saga-pattern.md) e no [README do OS](https://github.com/guimullerdev/oficina-os-service#saga-orquestrada).
+
 No saga do OS ele é o passo `EXECUTAR`:
 
 | Passo da saga | Entrada (do OS) | Ação do Execução | Saída (para o OS) |
@@ -241,6 +243,8 @@ Operação em janela paga (subir/derrubar o ambiente): [oficina-infra-k8s/docs/r
 ## 11. Dívidas técnicas
 
 - Credencial AWS do pod é uma chave IAM estática, sem IRSA.
+- OIDC não feito: o CI autentica na AWS com `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` estáticos, não com GitHub OIDC assumindo uma IAM role.
+- Ambiente único: só existe `prod` (ADR 0009 do `oficina-os-service`); a mudança chega à produção sem estágio intermediário.
 - Não há controle de estoque/peças nem apontamento de tempo: a execução só tem o estado e a linha do tempo.
 - A auto-conclusão só existe por flag (`EXECUCAO_AUTO_CONCLUIR_MS`) e está desligada em produção; a conclusão real é manual, pela API.
 - Itens `MSG` e `OUTBOX` não têm TTL: crescem indefinidamente na tabela.
