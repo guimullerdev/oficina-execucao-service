@@ -215,6 +215,7 @@ yarn test:cov      # jest --coverage; falha abaixo de 80% (statements, branches,
 
 - Threshold global de 80% em statements, branches, functions e lines (`package.json`). A cobertura exclui `*.module.ts`, `main.ts`, `*.dto.ts` e `*.spec.ts`; o relatório vai para `coverage/`.
 - Sonar: projeto `guimullerdev_oficina-execucao-service` (`sonar-project.properties`). O passo do CI só roda com o secret `SONAR_TOKEN` e usa a variável de repositório `SONAR_ORGANIZATION`, com `sonar.qualitygate.wait=true`. Dashboard: https://sonarcloud.io/project/overview?id=guimullerdev_oficina-execucao-service
+- Evidência de cobertura no SonarQube Cloud: 97,8% sobre 1.863 linhas e Quality Gate *OK* (17/11/2026; o badge no topo mostra o valor atual).
 
 ## 10. CI/CD e deploy
 
